@@ -1,0 +1,15 @@
+#!/usr/bin/env php
+<?php
+require_once('../lib/Migrator.php');
+
+$migrator = new Migrator(array(
+	'host' => 'localhost',
+	'user' => 'root',
+	'pass' => '_uMv9OXfXwF1_TQxg1qC',
+	'db'   => 'test'
+));
+
+#$migrator->create_database();
+$migrator->migrate();
+#$migrator->drop_database();
+?>
