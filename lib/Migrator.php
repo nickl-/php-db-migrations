@@ -1,6 +1,6 @@
 <?php
 
-include('Migration.php');
+include 'Migration.php';
 
 class Migrator {
 	private $conn;
@@ -11,7 +11,7 @@ class Migrator {
 		$user = $args['user'] ? $args['user'] : get_current_user();
 		$pass = $args['pass'] ? $args['pass'] : '';
 		$this->_connect($host, $user, $pass);
-
+		
 		$args['db'] && $this->db = $args['db'];
 	}
 	
@@ -39,13 +39,13 @@ class Migrator {
 		if ($this->conn->connect_errno) {
 			throw new Exception($this->conn->connect_error);
 		}
-
+		
 		## TODO move the _create_migrations_table call into the version method
 		$current_version = $this->version() or $this->_create_migrations_table();
-
+		
 		$this->migrations();
 	}
-
+	
 	public function migrations() {
 		$migrations = array();
 		$files = scandir('../db/migrations');
@@ -62,10 +62,11 @@ class Migrator {
 					throw new Exception("Duplicate migration name " . $name);
 				}
 			}
-			$migrations[] = new Migration($version, $name, $file);
+			include '../db/migrations/' . $file;
+			$migrations[] = new $name($version, $name, $file);
 		}
 	}
-
+	
 	public function version() {
 		$result = $this->conn->query("SELECT version, name FROM migrations");
 	}
