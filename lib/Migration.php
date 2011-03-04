@@ -4,13 +4,14 @@ abstract class Migration {
 	public $name;
 	public $file;
 	
-	public function __construct($version = NULL, $name = NULL, $file = NULL) {
+	abstract public function up();
+	abstract public function down();
+
+	public function __construct($version = null, $name = null, $file = null) {
 		$this->version = $version;
 		$this->name = $name;
 		$this->file = $file;
 	}
-	
-	abstract public function up();
-	abstract public function down();
+
 }
 ?>

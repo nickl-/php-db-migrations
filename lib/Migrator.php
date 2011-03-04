@@ -5,6 +5,7 @@ include 'Migration.php';
 class Migrator {
 	private $conn;
 	private $db;
+	private $migrations = array();
 	
 	public function __construct($args = array()) {
 		$host = $args['host'] ? $args['host'] : 'localhost';
@@ -13,6 +14,8 @@ class Migrator {
 		$this->_connect($host, $user, $pass);
 		
 		$args['db'] && $this->db = $args['db'];
+
+		$this->_load_migrations();
 	}
 	
 	public function create_database() {
@@ -40,21 +43,69 @@ class Migrator {
 			throw new Exception($this->conn->connect_error);
 		}
 		
-		## TODO move the _create_migrations_table call into the version method
-		$current_version = $this->version() or $this->_create_migrations_table();
-		
-		$this->migrations();
+		foreach ($this->migrations as $migration) {
+			print "$migration->name\n";
+			print "  " . $migration->name . "\n";
+			print "  " . $migration->version . "\n";
+			print "  " . $migration->file . "\n";
+		}
 	}
 	
-	public function migrations() {
-		$migrations = array();
+	public function version() {
+		$result = $this->conn->query("SELECT version, name FROM migrations");
+		if ($result) {
+			return $result;
+		} elseif ($this->conn->errno == 1146) {
+			$this->_create_migrations_table();
+			return $result;
+		} else {
+			throw new Exception("Unable to create migrations table!");
+		}
+	}
+	
+#	private function _applied_migrations() {
+#		$migrations;
+#		$query = 'SELECT version, name FROM migrations';
+#		if ($result = $this->conn->query($query)) {
+#			while ($row = $result->fetch_assoc()) {
+#				$migrations[] = new $row['name']($row['version'], $row['name']);
+#			}
+#			return $migrations;
+#		} else {
+#			throw new Exception($stmt->error);
+#		}
+#	}
+
+	private function _connect($host, $user, $pass) {
+		$this->conn = new mysqli($host, $user, $pass);
+		if ($this->conn->connect_errno) {
+			throw new Exception($this->conn->connect_error);
+		}
+	}
+	
+	private function _create_migrations_table() {
+		$stmt = $this->conn->stmt_init();
+		$stmt->prepare(
+			"CREATE TABLE migrations (\n" .
+			"  version bigint not null,\n" .
+			"  name tinytext not null,\n" .
+			"  primary key (version, name(255))\n" .
+			")"
+		);
+		$stmt->execute();
+		if ($stmt->errno) {
+			throw new Exception($stmt->error);
+		}
+	}
+	
+	private function _load_migrations() {
 		$files = scandir('../db/migrations');
 		foreach ($files as $file) {
 		  if (! preg_match('/^[\d]{14}_.*.php/', $file)) continue;
 			preg_match('/^([\d]{14})_(.*)\.php/', $file, $matches);
 			$version = $matches[1];
 			$name = join(array_map('ucfirst', preg_split('/_/', $matches[2])));
-			foreach ($migrations as $migration) {
+			foreach ($this->migrations as $migration) {
 				if ($version == $migration->version) {
 					throw new Exception("Duplicate migration version " . $version);
 				}
@@ -63,33 +114,7 @@ class Migrator {
 				}
 			}
 			include '../db/migrations/' . $file;
-			$migrations[] = new $name($version, $name, $file);
-		}
-	}
-	
-	public function version() {
-		$result = $this->conn->query("SELECT version, name FROM migrations");
-	}
-	
-	private function _connect($host, $user, $pass) {
-		$this->conn = new mysqli($host, $user, $pass);
-		if ($this->conn->connect_errno) {
-			throw new Exception($this->conn->connect_error . "\n");
-		}
-	}
-	
-	private function _create_migrations_table() {
-		$stmt = $this->conn->stmt_init();
-		$stmt->prepare(
-			"CREATE TABLE IF NOT EXISTS migrations (\n" .
-			"  version bigint not null,\n" .
-			"  name tinytext not null,\n" .
-			"  primary key (version, name(255))\n" .
-			")"
-		);
-		$stmt->execute();
-		if ($stmt->errno) {
-			die($stmt->error . "\n");
+			$this->migrations[$name] = new $name($version, $name, $file);
 		}
 	}
 }
