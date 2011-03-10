@@ -3,7 +3,7 @@
 include 'Migration.php';
 
 class Migrator {
-	private $conn;
+	public static $conn;
 	private $db;
 	private $migrations = array();
 	
@@ -19,7 +19,7 @@ class Migrator {
 	}
 	
 	public function create_database() {
-		$stmt = $this->conn->stmt_init();
+		$stmt = self::$conn->stmt_init();
 		$stmt->prepare("CREATE DATABASE " . $this->db);
 		$stmt->execute();
 		if ($stmt->errno) {
@@ -28,63 +28,71 @@ class Migrator {
 	}
 	
 	public function drop_database() {
-		$stmt = $this->conn->stmt_init();
+		$stmt = self::$conn->stmt_init();
 		$stmt->prepare("DROP DATABASE " . $this->db);
 		$stmt->execute();
 		if ($stmt->errno) {
-			throw new Excpetion($stmt->errno);
+			throw new Exception($stmt->errno);
 		}
 	}
 	
-	public function migrate($new_version = NULL) {
+	public function migrate($new_version = null) {
 		if (! $this->db) throw new Exception("A database name must be provided!\n");
-		$this->conn->select_db($this->db);
-		if ($this->conn->connect_errno) {
-			throw new Exception($this->conn->connect_error);
+		self::$conn->select_db($this->db);
+		if (self::$conn->connect_errno) {
+			throw new Exception(self::$conn->connect_error);
 		}
 		
 		foreach ($this->migrations as $migration) {
-			print "$migration->name\n";
-			print "  " . $migration->name . "\n";
-			print "  " . $migration->version . "\n";
-			print "  " . $migration->file . "\n";
+			if (! $migration->applied()) {
+				if (! isset($new_version) || $migration->version <= $new_version) {
+					print "Applying " . $migration->name . "... ";
+					$migration->up();
+					$this->_add_to_migrations_table($migration);
+					print "Done.\n";
+				}
+			}
+		}
+
+		if (isset($new_version)) {
+			foreach (array_reverse($this->migrations) as $migration) {
+				if ($migration->version > $new_version && $migration->applied()) {
+					print "Reverting " . $migration->name . "... ";
+					$this->_remove_from_migrations_table($migration);
+					$migration->down();
+					print "Done.\n";
+				}
+			}
 		}
 	}
 	
-	public function version() {
-		$result = $this->conn->query("SELECT version, name FROM migrations");
-		if ($result) {
-			return $result;
-		} elseif ($this->conn->errno == 1146) {
-			$this->_create_migrations_table();
-			return $result;
-		} else {
-			throw new Exception("Unable to create migrations table!");
+	private function _add_to_migrations_table($migration) {
+		$stmt = self::$conn->stmt_init();
+		$stmt->prepare("INSERT INTO migrations (version, name) VALUES (?, ?)");
+		if ($stmt->errno) {
+			if ($stmt->errno == 1146) {
+				if ($this->_create_migrations_table()) {
+					$stmt->prepare("INSERT INTO migrations (version, name) VALUES (?, ?)");
+				} else {
+					throw new Exception($stmt->error);
+				}
+			} else {
+				throw new Exception($stmt->error);
+			}
 		}
+		$stmt->bind_param('is', $migration->version, $migration->name);
+		$stmt->execute();
 	}
-	
-#	private function _applied_migrations() {
-#		$migrations;
-#		$query = 'SELECT version, name FROM migrations';
-#		if ($result = $this->conn->query($query)) {
-#			while ($row = $result->fetch_assoc()) {
-#				$migrations[] = new $row['name']($row['version'], $row['name']);
-#			}
-#			return $migrations;
-#		} else {
-#			throw new Exception($stmt->error);
-#		}
-#	}
 
 	private function _connect($host, $user, $pass) {
-		$this->conn = new mysqli($host, $user, $pass);
-		if ($this->conn->connect_errno) {
-			throw new Exception($this->conn->connect_error);
+		self::$conn = new mysqli($host, $user, $pass);
+		if (self::$conn->connect_errno) {
+			throw new Exception(self::$conn->connect_error);
 		}
 	}
 	
 	private function _create_migrations_table() {
-		$stmt = $this->conn->stmt_init();
+		$stmt = self::$conn->stmt_init();
 		$stmt->prepare(
 			"CREATE TABLE migrations (\n" .
 			"  version bigint not null,\n" .
@@ -96,6 +104,7 @@ class Migrator {
 		if ($stmt->errno) {
 			throw new Exception($stmt->error);
 		}
+		return true;
 	}
 	
 	private function _load_migrations() {
@@ -116,6 +125,17 @@ class Migrator {
 			include '../db/migrations/' . $file;
 			$this->migrations[$name] = new $name($version, $name, $file);
 		}
+	}
+	
+	private function _remove_from_migrations_table($migration) {
+		$stmt = self::$conn->stmt_init();
+		$stmt->prepare("DELETE FROM migrations WHERE version = ? and name = ?");
+		if ($stmt->errno) {
+			throw new Exception($stmt->error);
+		}
+		$stmt->bind_param('is', $migration->version, $migration->name);
+		$stmt->execute();
+		return $stmt->affected_rows;
 	}
 }
 ?>
