@@ -9,7 +9,8 @@ $migrator = new Migrator(array(
 	'db'   => 'test'
 ));
 
-#$migrator->create_database();
+$migrator->create_database();
 $migrator->migrate();
-#$migrator->drop_database();
+$migrator->migrate(0);
+$migrator->drop_database();
 ?>
